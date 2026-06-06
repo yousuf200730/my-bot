@@ -4,8 +4,24 @@ import hmac
 import hashlib
 import time
 import base64
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+
+# রেন্ডারের পোর্ট এরর দূর করার জন্য ফেক ওয়েব সার্ভার লজিক
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot is running successfully!")
+
+def run_health_check_server():
+    server_address = ('', 10000) # রেন্ডার সাধারণত ১০০০০ পোর্ট খোঁজে
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    print("Health check server started on port 10000...")
+    httpd.serve_forever()
 
 CHOOSING_FEATURE, WAITING_2FA = range(2)
 
@@ -29,12 +45,12 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     text = update.message.text
     if text == "Password 🔑":
         password = "".join(random.choice(string.ascii_letters + string.digits) for _ in range(12))
-        await update.message.reply_text(f"季 **Password:** `{password}`\n\n📋 _Long press to copy_", parse_mode="Markdown")
+        await update.message.reply_text(f"🔐 **Password:** `{password}`\n\n📋 _Long press to copy_", parse_mode="Markdown")
     elif text == "Foreign Name 🌐":
         full_name = f"{random.choice(random.choice([MALE_NAMES, FEMALE_NAMES]))} {random.choice(LAST_NAMES)}"
         await update.message.reply_text(f"👤 **Generated Name:**\n`{full_name}`", parse_mode="Markdown")
     elif text == "2FA Code 🔐":
-        await update.message.reply_text("🔑 আপনার Facebook 2FA সিক্রেট কি-টি পাঠান:")
+        await update.message.reply_text("🔑 আপনার Facebook 2FA সিক্রেট ki-টি পাঠান:")
         return WAITING_2FA
     return CHOOSING_FEATURE
 
@@ -55,6 +71,9 @@ async def process_2fa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return CHOOSING_FEATURE
 
 def main():
+    # ফেক ব্যাকএন্ড সার্ভার ব্যাকগ্রাউন্ড থ্রেডে চালু করা
+    threading.Thread(target=run_health_check_server, daemon=True).start()
+    
     application = Application.builder().token(BOT_TOKEN).build()
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
@@ -69,4 +88,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-  
+    
