@@ -4,7 +4,6 @@ import hmac
 import hashlib
 import time
 import base64
-import requests
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -38,7 +37,7 @@ def generate_date_random_password():
     current_day = datetime.now().strftime("%d")
     return f"{random_part}{current_day}"
 
-# ২. সিস্টেম ২: ৫টি র্যান্ডম অক্ষর + ৩টি ফিক্সড সিম্বল (যেমন: HDJSH@&@)
+# ২. সিস্টেম ২: ৫টি র্যান্ডম অক্ষর + শেষে ৩টি সিম্বল ফিক্সড (যেমন: SGSTX@&@)
 def generate_symbol_random_password():
     random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(5)) # ৫টি বড় হাতের অক্ষর
     symbols = "".join(random.choice("@&*$!") for _ in range(3)) # শেষে ৩টি সিম্বল ফিক্সড
@@ -48,31 +47,11 @@ def generate_symbol_random_password():
 def generate_only_alphabet_password():
     return "".join(random.choice(string.ascii_uppercase) for _ in range(7))
 
-# হাই-স্পিড এআই চ্যাট ফাংশন
-def ask_google_gemini_free(prompt):
-    try:
-        url = f"https://nexra.aryahcr.cc/api/chat/gpt"
-        headers = {"Content-Type": "application/json"}
-        data = {
-            "messages": [{"role": "user", "content": prompt}],
-            "model": "GPT-4",
-            "markdown": False
-        }
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            res_json = response.json()
-            reply = res_json.get('gpt', '')
-            if reply:
-                return reply
-        return "দুঃখিত ভাই, এআই সার্ভার ওভারলোড। একটু পরে আবার মেসেজ দিন।"
-    except:
-        return "🤖 সার্ভার রেসপন্স করছে না। অনুগ্রহ করে আবার ট্রাই করুন।"
-
 # মেইন মেনু
 def get_main_keyboard():
     keyboard = [
-        [KeyboardButton("Foreign Name 🌐"), KeyboardButton("AI Chatbot 🤖")],
-        [KeyboardButton("Password 🔑"), KeyboardButton("2FA Code 🔐")],
+        [KeyboardButton("Foreign Name 🌐"), KeyboardButton("Password 🔑")],
+        [KeyboardButton("2FA Code 🔐")],
         [KeyboardButton("Outlook Mail Buy 🌐", web_app=WebAppInfo(url=OUTLOOK_WEBAPP_URL))]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -106,28 +85,13 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif text == "2FA Code 🔐":
         context.user_data['waiting_for_2fa'] = True
-        context.user_data['waiting_for_ai'] = False
         await update.message.reply_text("🔑 আপনার Facebook 2FA সিক্রেট কি (Secret Key) পাঠান:")
 
-    elif text == "AI Chatbot 🤖":
-        context.user_data['waiting_for_ai'] = True
-        context.user_data['waiting_for_2fa'] = False
-        await update.message.reply_text("🤖 **AI মোড অ্যাক্টিভ হয়েছে!**\nএখন আপনি আমাকে যেকোনো প্রশ্ন করতে পারেন (যেমন: 'Kamon acho'):")
-
-# ইউজার ইনপুত প্রসেসিং
+# ইউজার ইনপুট প্রসেসিং
 async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     
-    if context.user_data.get('waiting_for_ai'):
-        if user_text.startswith('/') or user_text in ["Foreign Name 🌐", "AI Chatbot 🤖", "Password 🔑", "2FA Code 🔐"]:
-            context.user_data['waiting_for_ai'] = False
-            return
-            
-        waiting_msg = await update.message.reply_text("🤔 ভাবছি...")
-        ai_reply = ask_google_gemini_free(user_text)
-        await waiting_msg.edit_text(f"🤖 **AI:** {ai_reply}")
-        
-    elif context.user_data.get('waiting_for_2fa'):
+    if context.user_data.get('waiting_for_2fa'):
         secret = user_text.strip().replace(" ", "")
         try:
             missing_padding = len(secret) % 8
@@ -170,7 +134,7 @@ async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         ]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         
-    # --- পাসওয়ার্ড জেনারেশন পার্ট (সবুজ-লাল বাটন থিম) ---
+    # --- পাসওয়ার্ড জেনারেশন পার্ট ---
     elif data == "set_date_pass" or data == "regen_date_pass":
         password = generate_date_random_password()
         reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
@@ -209,7 +173,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
     
     application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^(Foreign Name 🌐|AI Chatbot 🤖|Password 🔑|2FA Code 🔐)$'), handle_text_menu))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^(Foreign Name 🌐|Password 🔑|2FA Code 🔐)$'), handle_text_menu))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_inputs))
     application.add_handler(CallbackQueryHandler(handle_inline_buttons))
     
@@ -217,4 +181,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
+        
