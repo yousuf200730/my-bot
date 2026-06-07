@@ -38,26 +38,35 @@ def generate_date_random_password():
     current_day = datetime.now().strftime("%d")
     return f"{random_part}{current_day}"
 
-# ২. সিস্টেম ২: র্যান্ডম টেক্সট + ৩টি ফিক্সড সিম্বল (যেমন: JDHSG@&@)
+# ২. সিস্টেম ২: ৫টি র্যান্ডম অক্ষর + ৩টি ফিক্সড সিম্বল (যেমন: HDJSH@&@)
 def generate_symbol_random_password():
-    random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(5)) # ৫টি অক্ষর
-    symbols = "".join(random.choice("@&#$%^*!") for _ in range(3)) # শেষে ৩টি সিম্বল ফিক্সড
+    random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(5)) # ৫টি বড় হাতের অক্ষর
+    symbols = "".join(random.choice("@&*$!") for _ in range(3)) # শেষে ৩টি সিম্বল ফিক্সড
     return f"{random_part}{symbols}"
 
 # ৩. সিস্টেম ৩: শুধু বড় হাতের অক্ষর (যেমন: MDKAHFG)
 def generate_only_alphabet_password():
     return "".join(random.choice(string.ascii_uppercase) for _ in range(7))
 
-# ফ্রি এআই এপিআই ফাংশন
-def ask_free_ai(prompt):
+# হাই-স্পিড এআই চ্যাট ফাংশন
+def ask_google_gemini_free(prompt):
     try:
-        response = requests.get(f"https://api.simsimi.site/simsimi?text={prompt}&lc=bn")
+        url = f"https://nexra.aryahcr.cc/api/chat/gpt"
+        headers = {"Content-Type": "application/json"}
+        data = {
+            "messages": [{"role": "user", "content": prompt}],
+            "model": "GPT-4",
+            "markdown": False
+        }
+        response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
-            res_data = response.json()
-            return res_data.get('success', 'আমি এই মুহূর্তে একটু ব্যস্ত আছি ভাই।')
-        return "দুঃখিত ভাই, এআই সার্ভার সাড়া দিচ্ছে না।"
+            res_json = response.json()
+            reply = res_json.get('gpt', '')
+            if reply:
+                return reply
+        return "দুঃখিত ভাই, এআই সার্ভার ওভারলোড। একটু পরে আবার মেসেজ দিন।"
     except:
-        return "কোথাও একটা সমস্যা হয়েছে, আবার চেষ্টা করুন।"
+        return "🤖 সার্ভার রেসপন্স করছে না। অনুগ্রহ করে আবার ট্রাই করুন।"
 
 # মেইন মেনু
 def get_main_keyboard():
@@ -87,7 +96,6 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "Password 🔑":
         password = generate_date_random_password()
         reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        
         keyboard = [
             [InlineKeyboardButton("✅ Date+👑", callback_data="set_date_pass"), 
              InlineKeyboardButton("❌ Symbol+👑", callback_data="set_sym_pass"), 
@@ -104,9 +112,9 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "AI Chatbot 🤖":
         context.user_data['waiting_for_ai'] = True
         context.user_data['waiting_for_2fa'] = False
-        await update.message.reply_text("🤖 **AI মোড অ্যাক্টিভ হয়েছে!**\nএখন আপনি আমাকে যেকোনো প্রশ্ন করতে পারেন:")
+        await update.message.reply_text("🤖 **AI মোড অ্যাক্টিভ হয়েছে!**\nএখন আপনি আমাকে যেকোনো প্রশ্ন করতে পারেন (যেমন: 'Kamon acho'):")
 
-# ইউজার ইনপুট প্রসেসিং
+# ইউজার ইনপুত প্রসেসিং
 async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     
@@ -116,7 +124,7 @@ async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
             
         waiting_msg = await update.message.reply_text("🤔 ভাবছি...")
-        ai_reply = ask_free_ai(user_text)
+        ai_reply = ask_google_gemini_free(user_text)
         await waiting_msg.edit_text(f"🤖 **AI:** {ai_reply}")
         
     elif context.user_data.get('waiting_for_2fa'):
@@ -137,11 +145,10 @@ async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await update.message.reply_text("অনুগ্রহ করে নিচের মেনু বাটন ব্যবহার করুন।", reply_markup=get_main_keyboard())
 
-# ইনলাইন বাটন ক্লিকের লজিক (সবুজ-লাল কালার থিমসহ সম্পূর্ণ ফাংশন)
+# ইনলাইন বাটন ক্লিকের লজিক (সবুজ-লাল কালার থিম)
 async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
     data = query.data
     
     # --- নাম জেনারেশন পার্ট ---
@@ -163,7 +170,7 @@ async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         ]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         
-    # --- পাসওয়ার্ড জেনারেশন পার্ট (কালারফুল চেঞ্জিং সিস্টেম) ---
+    # --- পাসওয়ার্ড জেনারেশন পার্ট (সবুজ-লাল বাটন থিম) ---
     elif data == "set_date_pass" or data == "regen_date_pass":
         password = generate_date_random_password()
         reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
@@ -177,7 +184,7 @@ async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         
     elif data == "set_sym_pass" or data == "regen_sym_pass":
         password = generate_symbol_random_password()
-        reply_text = f"🔒 **Password Generator (Symbol + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long speak to copy_"
+        reply_text = f"🔒 **Password Generator (Symbol + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
         keyboard = [
             [InlineKeyboardButton("❌ Date+👑", callback_data="set_date_pass"), 
              InlineKeyboardButton("✅ Symbol+👑", callback_data="set_sym_pass"), 
@@ -210,4 +217,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
+    
