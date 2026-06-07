@@ -85,7 +85,6 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         
     elif text == "Password 🔑":
-        # ডিফল্টভাবে প্রথমে ১ম সিস্টেম (Date + Random) একটিভ দেখাবে
         password = generate_date_random_password()
         reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
         
@@ -138,7 +137,7 @@ async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await update.message.reply_text("অনুগ্রহ করে নিচের মেনু বাটন ব্যবহার করুন।", reply_markup=get_main_keyboard())
 
-# ইনলাইন বাটন ক্লিকের লজিক (সবুজ-লাল কালার থিমসহ)
+# ইনলাইন বাটন ক্লিকের লজিক (সবুজ-লাল কালার থিমসহ সম্পূর্ণ ফাংশন)
 async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -178,7 +177,7 @@ async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         
     elif data == "set_sym_pass" or data == "regen_sym_pass":
         password = generate_symbol_random_password()
-        reply_text = f"🔒 **Password Generator (Symbol + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
+        reply_text = f"🔒 **Password Generator (Symbol + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long speak to copy_"
         keyboard = [
             [InlineKeyboardButton("❌ Date+👑", callback_data="set_date_pass"), 
              InlineKeyboardButton("✅ Symbol+👑", callback_data="set_sym_pass"), 
@@ -211,3 +210,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+        
