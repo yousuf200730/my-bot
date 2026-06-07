@@ -4,12 +4,13 @@ import hmac
 import hashlib
 import time
 import base64
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# రেন্ডারের ফেক সার্ভার
+# রেন্ডারের ফেক সার্ভার
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -25,16 +26,28 @@ def run_health_check_server():
 BOT_TOKEN = "8861233125:AAGWtKG3j1lMIU4bQXiIWbpKE4ELlxxy3qM"
 OUTLOOK_WEBAPP_URL = "https://code.yamin.bd" 
 
-# ইউএসএ নামের ডাটাবেজ (এখানে ৫০০টি নাম পর্যন্ত বাড়িয়ে নিতে পারবেন)
+# ইউএসএ নামের ডাটাবেজ
 MALE_NAMES = ["James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Thomas", "Charles", "Christopher", "Daniel", "Matthew", "Anthony", "Mark"]
 FEMALE_NAMES = ["Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Barbara", "Susan", "Jessica", "Sarah", "Karen", "Nancy", "Lisa", "Betty", "Margaret", "Sandra"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson"]
 
-# পাসওয়ার্ড জেনারেটর ফাংশন
-def generate_random_password():
-    return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(12))
+# ১. সিস্টেম ১: র্যান্ডম টেক্সট + আজকের তারিখ (যেমন: SGSTXV07)
+def generate_date_random_password():
+    random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(6))
+    current_day = datetime.now().strftime("%d") # আজকের দিন (যেমন: 07)
+    return f"{random_part}{current_day}"
 
-# মেইন মেনু (নিচের স্থায়ী বাটনগুলো)
+# ২. সিস্টেম ২: র্যান্ডম টেক্সট + ৩টি সিম্বল (যেমন: HDJS@&#)
+def generate_symbol_random_password():
+    random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(4))
+    symbols = "".join(random.choice("@&#$%^*!") for _ in range(3))
+    return f"{random_part}{symbols}"
+
+# ৩. সিস্টেম ৩: শুধু বড় হাতের অক্ষর (যেমন: MDKAHFG)
+def generate_only_alphabet_password():
+    return "".join(random.choice(string.ascii_uppercase) for _ in range(7))
+
+# মেইন মেনু
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("Foreign Name 🌐")],
@@ -44,7 +57,6 @@ def get_main_keyboard():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ইউজার অবজেক্ট হ্যান্ডেল করা (মেসেজ নাকি বাটন ক্লিক)
     msg = update.message if update.message else update.callback_query.message
     await msg.reply_text("👋 **FB ALL WORK Bot**-এ স্বাগতম!\nমেনু থেকে সার্ভিস সিলেক্ট করুন।", reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
@@ -52,10 +64,8 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     
     if text == "Foreign Name 🌐":
-        # ডিফল্টভাবে একটি মেল নাম জেনারেট করে ইনলাইন বাটনসহ পাঠানো
         full_name = f"{random.choice(MALE_NAMES)} {random.choice(LAST_NAMES)}"
         reply_text = f"🏷️ **Type:** Foreign • Male\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_"
-        
         keyboard = [
             [InlineKeyboardButton("🌐 👨 Male", callback_data="set_male"), InlineKeyboardButton("🌐 👩 Female", callback_data="set_female")],
             [InlineKeyboardButton("✨ New Name 🔄", callback_data="regen_male")]
@@ -63,11 +73,16 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         
     elif text == "Password 🔑":
-        # পাসওয়ার্ড জেনারেট করে ইনলাইন বাটনসহ পাঠানো
-        password = generate_random_password()
-        reply_text = f"🔒 **Password Generator**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
+        # ডিফল্টভাবে প্রথমে ১ম সিস্টেম (Date + Random) দেখাবে
+        password = generate_date_random_password()
+        reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
         
-        keyboard = [[InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_pass")]]
+        keyboard = [
+            [InlineKeyboardButton("📅 Date+👑", callback_data="set_date_pass"), 
+             InlineKeyboardButton("🔣 Symbol+👑", callback_data="set_sym_pass"), 
+             InlineKeyboardButton("🔤 Alphabet", callback_data="set_alpha_pass")],
+            [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_date_pass")]
+        ]
         await update.message.reply_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         
     elif text == "2FA Code 🔐":
@@ -75,7 +90,6 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔑 আপনার Facebook 2FA সিক্রেট কি (Secret Key) পাঠান:")
 
 async def process_2fa_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ইউজার যদি ২এফএ স্টেজে থাকে
     if context.user_data.get('waiting_for_2fa'):
         secret = update.message.text.strip().replace(" ", "")
         try:
@@ -92,16 +106,16 @@ async def process_2fa_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ সিক্রেট কি সঠিক নয়। আবার মেইন মেনু থেকে চেষ্টা করুন।", reply_markup=get_main_keyboard())
         context.user_data['waiting_for_2fa'] = False
     else:
-        # সাধারণ টেক্সট আসলে মেইন মেনু দেখানো
         await update.message.reply_text("অনুগ্রহ করে নিচের মেনু বাটন ব্যবহার করুন।", reply_markup=get_main_keyboard())
 
-# ইনলাইন বাটন ক্লিকের লজিক (Callback Query)
+# ইনলাইন বাটন ক্লিকের লজিক
 async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer() # বাটন লোডিং বন্ধ করার জন্য
+    await query.answer()
     
     data = query.data
     
+    # --- নাম জেনারেশন পার্ট ---
     if data == "set_male" or data == "regen_male":
         full_name = f"{random.choice(MALE_NAMES)} {random.choice(LAST_NAMES)}"
         reply_text = f"🏷️ **Type:** Foreign • Male\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_"
@@ -120,18 +134,44 @@ async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         ]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         
-    elif data == "regen_pass":
-        password = generate_random_password()
-        reply_text = f"🔒 **Password Generator**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        keyboard = [[InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_pass")]]
+    # --- পাসওয়ার্ড জেনারেশন পার্ট (৩টি সিস্টেম) ---
+    elif data == "set_date_pass" or data == "regen_date_pass":
+        password = generate_date_random_password()
+        reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
+        keyboard = [
+            [InlineKeyboardButton("📅 Date+👑 ✅", callback_data="set_date_pass"), 
+             InlineKeyboardButton("🔣 Symbol+👑", callback_data="set_sym_pass"), 
+             InlineKeyboardButton("🔤 Alphabet", callback_data="set_alpha_pass")],
+            [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_date_pass")]
+        ]
+        await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        
+    elif data == "set_sym_pass" or data == "regen_sym_pass":
+        password = generate_symbol_random_password()
+        reply_text = f"🔒 **Password Generator (Symbol + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
+        keyboard = [
+            [InlineKeyboardButton("📅 Date+👑", callback_data="set_date_pass"), 
+             InlineKeyboardButton("🔣 Symbol+👑 ✅", callback_data="set_sym_pass"), 
+             InlineKeyboardButton("🔤 Alphabet", callback_data="set_alpha_pass")],
+            [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_sym_pass")]
+        ]
+        await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        
+    elif data == "set_alpha_pass" or data == "regen_alpha_pass":
+        password = generate_only_alphabet_password()
+        reply_text = f"🔒 **Password Generator (Only Alphabet)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
+        keyboard = [
+            [InlineKeyboardButton("📅 Date+👑", callback_data="set_date_pass"), 
+             InlineKeyboardButton("🔣 Symbol+👑", callback_data="set_sym_pass"), 
+             InlineKeyboardButton("🔤 Alphabet ✅", callback_data="set_alpha_pass")],
+            [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_alpha_pass")]
+        ]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 def main():
     threading.Thread(target=run_health_check_server, daemon=True).start()
-    
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # হ্যান্ডলারসমূহ
     application.add_handler(CommandHandler('start', start))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^(Foreign Name 🌐|Password 🔑|2FA Code 🔐)$'), handle_text_menu))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_2fa_text))
