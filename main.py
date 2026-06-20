@@ -4,6 +4,8 @@ import hmac
 import hashlib
 import time
 import base64
+import requests
+import re
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -31,34 +33,76 @@ MALE_NAMES = ["James", "John", "Robert", "Michael", "William", "David", "Richard
 FEMALE_NAMES = ["Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Barbara", "Susan", "Jessica", "Sarah", "Karen", "Nancy", "Lisa", "Betty", "Margaret", "Sandra"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson"]
 
-# ১. সিস্টেম ১: র্যান্ডম টেক্সট + আজকের তারিখ (যেমন: SGSTXV07)
 def generate_date_random_password():
     random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(6))
     current_day = datetime.now().strftime("%d")
     return f"{random_part}{current_day}"
 
-# ২. সিস্টেম ২: ৫টি র্যান্ডম অক্ষর + শেষে ৩টি সিম্বল ফিক্সড (যেমন: SGSTX@&@)
 def generate_symbol_random_password():
-    random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(5)) # ৫টি বড় হাতের অক্ষর
-    symbols = "".join(random.choice("@&*$!") for _ in range(3)) # শেষে ৩টি সিম্বল ফিক্সড
+    random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(5))
+    symbols = "".join(random.choice("@&*$!") for _ in range(3))
     return f"{random_part}{symbols}"
 
-# ৩. সিস্টেম ৩: শুধু বড় হাতের অক্ষর (যেমন: MDKAHFG)
 def generate_only_alphabet_password():
     return "".join(random.choice(string.ascii_uppercase) for _ in range(7))
 
-# মেইন মেনু
+# হটমেইল ওটিপি এক্সট্রাক্টর ফাংশন
+def extract_hotmail_otp(refresh_token, client_id):
+    try:
+        # ১. রিফ্রেশ টোকেন দিয়ে এক্সেস টোকেন নেওয়া
+        url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+        data = {
+            "client_id": client_id,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "scope": "https://graph.microsoft.com/mail.read"
+        }
+        res = requests.post(url, data=data, timeout=10).json()
+        access_token = res.get("access_token")
+        
+        if not access_token:
+            return "❌ এক্সেস টোকেন পাওয়া যায়নি! টোকেন এক্সপায়ার হতে পারে।"
+            
+        # ২. মাইক্রোসফট গ্রাফ এপিআই দিয়ে ইনবক্স মেসেজ রিড করা
+        mail_url = "https://graph.microsoft.com/v1.0/me/messages?$top=5"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        mail_res = requests.get(mail_url, headers=headers, timeout=10).json()
+        
+        messages = mail_res.get("value", [])
+        if not messages:
+            return "❌ ইনবক্সে কোনো মেসেজ পাওয়া যায়নি!"
+            
+        # ৩. ওটিপি কোড খোঁজা (ফেসবুক বা সাধারণ ৬ ডিজিটের সংখ্যা)
+        otp_list = []
+        for index, msg in enumerate(messages, 1):
+            body = msg.get("body", {}).get("content", "")
+            subject = msg.get("subject", "")
+            
+            # সাবজেক্ট বা বডি থেকে ৬ ডিজিটের কোড খোঁজা
+            match = re.search(r'\b\d{6}\b', subject + body)
+            if match:
+                otp_list.append(f"{index}. {match.group(0)}")
+                
+        if otp_list:
+            return "✅ **OTP FOUND:**\n\n" + "\n".join(otp_list)
+        else:
+            return "❌ কোনো ওটিপি (OTP) কোড পাওয়া যায়নি।"
+            
+    except Exception as e:
+        return f"❌ এরর ঘটেছে: {str(e)}"
+
+# কীপ্যাড মেনু আপডেট (Get Hotmail Code বাটন যুক্ত করা হয়েছে)
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("Foreign Name 🌐"), KeyboardButton("Password 🔑")],
-        [KeyboardButton("2FA Code 🔐")],
+        [KeyboardButton("2FA Code 🔐"), KeyboardButton("Get Hotmail Code ✉️")],
         [KeyboardButton("Outlook Mail Buy 🌐", web_app=WebAppInfo(url=OUTLOOK_WEBAPP_URL))]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message if update.message else update.callback_query.message
-    await msg.reply_text("👋 **FB ALL WORK Bot**-এ স্বাগতম!\nমেনু থেকে সার্ভিস সিলেক্ট করুন।", reply_markup=get_main_keyboard(), parse_mode="Markdown")
+    await msg.reply_text("👋 **FB ALL WORK Bot**-এ স্বাগতম!\nমেনু থেকে SERVICE সিলেক্ট করুন।", reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
 async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -84,15 +128,20 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         
     elif text == "2FA Code 🔐":
-        context.user_data['waiting_for_2fa'] = True
+        context.user_data['waiting_for_input'] = '2fa'
         await update.message.reply_text("🔑 আপনার Facebook 2FA সিক্রেট কি (Secret Key) পাঠান:")
+        
+    elif text == "Get Hotmail Code ✉️":
+        context.user_data['waiting_for_input'] = 'hotmail'
+        await update.message.reply_text("📧 **Mail Data দিন:**\n\n`Format: email|pass|refresh_token|client_id`", parse_mode="Markdown")
 
-# ইউজার ইনপুট প্রসেসিং
+# ইউজার মেসেজ ইনপুট হ্যান্ডলার
 async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
+    user_text = update.message.text.strip()
+    state = context.user_data.get('waiting_for_input')
     
-    if context.user_data.get('waiting_for_2fa'):
-        secret = user_text.strip().replace(" ", "")
+    if state == '2fa':
+        secret = user_text.replace(" ", "")
         try:
             missing_padding = len(secret) % 8
             if missing_padding: secret += '=' * (8 - missing_padding)
@@ -105,67 +154,53 @@ async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(f"🔒 **2FA Code:**\n`{str(token).zfill(6)}`", parse_mode="Markdown", reply_markup=get_main_keyboard())
         except:
             await update.message.reply_text("❌ সিক্রেট কি সঠিক নয়। আবার চেষ্টা করুন।", reply_markup=get_main_keyboard())
-        context.user_data['waiting_for_2fa'] = False
+        context.user_data['waiting_for_input'] = None
+        
+    elif state == 'hotmail':
+        parts = user_text.split('|')
+        if len(parts) >= 4:
+            email = parts[0].strip()
+            refresh_token = parts[2].strip()
+            client_id = parts[3].strip()
+            
+            status_msg = await update.message.reply_text("⏳ ওটিপি (OTP) খোঁজা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...")
+            
+            # ওটিপি এক্সট্রাক্ট করা
+            result = extract_hotmail_otp(refresh_token, client_id)
+            await status_msg.edit_text(result, parse_mode="Markdown")
+        else:
+            await update.message.reply_text("❌ ভুল ফরম্যাট! অনুগ্রহ করে সঠিক ফরম্যাটে ডাটা দিন:\n`email|pass|refresh_token|client_id`", parse_mode="Markdown")
+        context.user_data['waiting_for_input'] = None
     else:
         await update.message.reply_text("অনুগ্রহ করে নিচের মেনু বাটন ব্যবহার করুন।", reply_markup=get_main_keyboard())
 
-# ইনলাইন বাটন ক্লিকের লজিক (সবুজ-লাল কালার থিম)
+# ইনলাইন বোতামের লজিক
 async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    
-    # --- নাম জেনারেশন পার্ট ---
+    query = update.callback_query; await query.answer(); data = query.data
     if data == "set_male" or data == "regen_male":
         full_name = f"{random.choice(MALE_NAMES)} {random.choice(LAST_NAMES)}"
         reply_text = f"🏷️ **Type:** Foreign • Male\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_"
-        keyboard = [
-            [InlineKeyboardButton("🌐 👨 Male ✅", callback_data="set_male"), InlineKeyboardButton("🌐 👩 Female", callback_data="set_female")],
-            [InlineKeyboardButton("✨ New Name 🔄", callback_data="regen_male")]
-        ]
+        keyboard = [[InlineKeyboardButton("🌐 👨 Male ✅", callback_data="set_male"), InlineKeyboardButton("🌐 👩 Female", callback_data="set_female")], [InlineKeyboardButton("✨ New Name 🔄", callback_data="regen_male")]]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        
     elif data == "set_female" or data == "regen_female":
         full_name = f"{random.choice(FEMALE_NAMES)} {random.choice(LAST_NAMES)}"
         reply_text = f"🏷️ **Type:** Foreign • Female\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_"
-        keyboard = [
-            [InlineKeyboardButton("🌐 👨 Male", callback_data="set_male"), InlineKeyboardButton("🌐 👩 Female ✅", callback_data="set_female")],
-            [InlineKeyboardButton("✨ New Name 🔄", callback_data="regen_female")]
-        ]
+        keyboard = [[InlineKeyboardButton("🌐 👨 Male", callback_data="set_male"), InlineKeyboardButton("🌐 👩 Female ✅", callback_data="set_female")], [InlineKeyboardButton("✨ New Name 🔄", callback_data="regen_female")]]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        
-    # --- পাসওয়ার্ড জেনারেশন পার্ট ---
     elif data == "set_date_pass" or data == "regen_date_pass":
         password = generate_date_random_password()
         reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        keyboard = [
-            [InlineKeyboardButton("✅ Date+👑", callback_data="set_date_pass"), 
-             InlineKeyboardButton("❌ Symbol+👑", callback_data="set_sym_pass"), 
-             InlineKeyboardButton("❌ Alphabet", callback_data="set_alpha_pass")],
-            [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_date_pass")]
-        ]
+        keyboard = [[InlineKeyboardButton("✅ Date+👑", callback_data="set_date_pass"), InlineKeyboardButton("❌ Symbol+👑", callback_data="set_sym_pass"), InlineKeyboardButton("❌ Alphabet", callback_data="set_alpha_pass")], [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_date_pass")]]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        
     elif data == "set_sym_pass" or data == "regen_sym_pass":
         password = generate_symbol_random_password()
         reply_text = f"🔒 **Password Generator (Symbol + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        keyboard = [
-            [InlineKeyboardButton("❌ Date+👑", callback_data="set_date_pass"), 
-             InlineKeyboardButton("✅ Symbol+👑", callback_data="set_sym_pass"), 
-             InlineKeyboardButton("❌ Alphabet", callback_data="set_alpha_pass")],
-            [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_sym_pass")]
-        ]
+        keyboard = [[InlineKeyboardButton("❌ Date+👑", callback_data="set_date_pass"), InlineKeyboardButton("✅ Symbol+👑", callback_data="set_sym_pass"), InlineKeyboardButton("❌ Alphabet", callback_data="set_alpha_pass")], [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_sym_pass")]]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        
     elif data == "set_alpha_pass" or data == "regen_alpha_pass":
         password = generate_only_alphabet_password()
         reply_text = f"🔒 **Password Generator (Only Alphabet)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        keyboard = [
-            [InlineKeyboardButton("❌ Date+👑", callback_data="set_date_pass"), 
-             InlineKeyboardButton("❌ Symbol+👑", callback_data="set_sym_pass"), 
-             InlineKeyboardButton("✅ Alphabet", callback_data="set_alpha_pass")],
-            [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_alpha_pass")]
-        ]
+        keyboard = [[InlineKeyboardButton("❌ Date+👑", callback_data="set_date_pass"), InlineKeyboardButton("❌ Symbol+👑", callback_data="set_sym_pass"), InlineKeyboardButton("✅ Alphabet", callback_data="set_alpha_pass")], [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_alpha_pass")]]
         await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 def main():
@@ -173,7 +208,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
     
     application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^(Foreign Name 🌐|Password 🔑|2FA Code 🔐)$'), handle_text_menu))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^(Foreign Name 🌐|Password 🔑|2FA Code 🔐|Get Hotmail Code ✉️)$'), handle_text_menu))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_inputs))
     application.add_handler(CallbackQueryHandler(handle_inline_buttons))
     
@@ -181,4 +216,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
+                        
