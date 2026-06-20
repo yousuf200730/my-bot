@@ -12,7 +12,7 @@ import threading
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# রেন্ডারের ফেক সার্ভার
+# রেন্ডারের হেলথ চেক সার্ভার
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -46,10 +46,9 @@ def generate_symbol_random_password():
 def generate_only_alphabet_password():
     return "".join(random.choice(string.ascii_uppercase) for _ in range(7))
 
-# হটমেইল ওটিপি এক্সট্রাক্টর ফাংশন
+# হটমেইল ওটিপি এক্সট্রাক্টর মেথড
 def extract_hotmail_otp(refresh_token, client_id):
     try:
-        # ১. রিফ্রেশ টোকেন দিয়ে এক্সেস টোকেন নেওয়া
         url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
         data = {
             "client_id": client_id,
@@ -61,24 +60,21 @@ def extract_hotmail_otp(refresh_token, client_id):
         access_token = res.get("access_token")
         
         if not access_token:
-            return "❌ এক্সেস টোকেন পাওয়া যায়নি! টোকেন এক্সপায়ার হতে পারে।"
+            return "❌ এক্সেস টোকেন পাওয়া যায়নি! আপনার সাবমিট করা ডাটা চেক করুন বা রিফ্রেস টোকেন ডেড।"
             
-        # ২. মাইক্রোসফট গ্রাফ এপিআই দিয়ে ইনবক্স মেসেজ রিড করা
         mail_url = "https://graph.microsoft.com/v1.0/me/messages?$top=5"
         headers = {"Authorization": f"Bearer {access_token}"}
         mail_res = requests.get(mail_url, headers=headers, timeout=10).json()
         
         messages = mail_res.get("value", [])
         if not messages:
-            return "❌ ইনবক্সে কোনো মেসেজ পাওয়া যায়নি!"
+            return "❌ ইনবক্সে কোনো নতুন ওটিপি বা মেসেজ পাওয়া যায়নি!"
             
-        # ৩. ওটিপি কোড খোঁজা (ফেসবুক বা সাধারণ ৬ ডিজিটের সংখ্যা)
         otp_list = []
         for index, msg in enumerate(messages, 1):
             body = msg.get("body", {}).get("content", "")
             subject = msg.get("subject", "")
             
-            # সাবজেক্ট বা বডি থেকে ৬ ডিজিটের কোড খোঁজা
             match = re.search(r'\b\d{6}\b', subject + body)
             if match:
                 otp_list.append(f"{index}. {match.group(0)}")
@@ -86,12 +82,12 @@ def extract_hotmail_otp(refresh_token, client_id):
         if otp_list:
             return "✅ **OTP FOUND:**\n\n" + "\n".join(otp_list)
         else:
-            return "❌ কোনো ওটিপি (OTP) কোড পাওয়া যায়নি।"
+            return "❌ ইনবক্স রিড করা হয়েছে, কিন্তু কোনো ৬ ডিজিটের কোড পাওয়া যায়নি।"
             
     except Exception as e:
-        return f"❌ এরর ঘটেছে: {str(e)}"
+        return f"❌ কানেকশন এরর: {str(e)}"
 
-# কীপ্যাড মেনু আপডেট (Get Hotmail Code বাটন যুক্ত করা হয়েছে)
+# কিবোর্ড লেআউট
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("Foreign Name 🌐"), KeyboardButton("Password 🔑")],
@@ -135,7 +131,6 @@ async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_input'] = 'hotmail'
         await update.message.reply_text("📧 **Mail Data দিন:**\n\n`Format: email|pass|refresh_token|client_id`", parse_mode="Markdown")
 
-# ইউজার মেসেজ ইনপুট হ্যান্ডলার
 async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
     state = context.user_data.get('waiting_for_input')
@@ -159,22 +154,18 @@ async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif state == 'hotmail':
         parts = user_text.split('|')
         if len(parts) >= 4:
-            email = parts[0].strip()
             refresh_token = parts[2].strip()
             client_id = parts[3].strip()
             
             status_msg = await update.message.reply_text("⏳ ওটিপি (OTP) খোঁজা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...")
-            
-            # ওটিপি এক্সট্রাক্ট করা
             result = extract_hotmail_otp(refresh_token, client_id)
             await status_msg.edit_text(result, parse_mode="Markdown")
         else:
-            await update.message.reply_text("❌ ভুল ফরম্যাট! অনুগ্রহ করে সঠিক ফরম্যাটে ডাটা দিন:\n`email|pass|refresh_token|client_id`", parse_mode="Markdown")
+            await update.message.reply_text("❌ ভুল ফরম্যাট! অনুগ্রহ করে স্ক্রিনের ফরম্যাট অনুযায়ী ডাটা দিন:\n`email|pass|refresh_token|client_id`", parse_mode="Markdown")
         context.user_data['waiting_for_input'] = None
     else:
         await update.message.reply_text("অনুগ্রহ করে নিচের মেনু বাটন ব্যবহার করুন।", reply_markup=get_main_keyboard())
 
-# ইনলাইন বোতামের লজিক
 async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; await query.answer(); data = query.data
     if data == "set_male" or data == "regen_male":
@@ -205,6 +196,8 @@ async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TY
 
 def main():
     threading.Thread(target=run_health_check_server, daemon=True).start()
+    
+    # এরর এড়াতে বিল্ড মেকানিজম ফিক্স করা হয়েছে
     application = Application.builder().token(BOT_TOKEN).build()
     
     application.add_handler(CommandHandler('start', start))
@@ -212,8 +205,9 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_inputs))
     application.add_handler(CallbackQueryHandler(handle_inline_buttons))
     
-    application.run_polling()
+    # স্টার্ট পোলিং মেথড
+    application.run_polling(close_loop=False)
 
 if __name__ == '__main__':
     main()
-                        
+    
