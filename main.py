@@ -9,8 +9,6 @@ import re
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 # রেন্ডারের হেলথ চেক সার্ভার
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -26,27 +24,45 @@ def run_health_check_server():
     httpd.serve_forever()
 
 BOT_TOKEN = "8861233125:AAGWtKG3j1lMIU4bQXiIWbpKE4ELlxxy3qM"
-OUTLOOK_WEBAPP_URL = "https://code.yamin.bd" 
+OUTLOOK_WEBAPP_URL = "https://code.yamin.bd"
 
-# ইউএসএ নামের ডাটাবেজ
 MALE_NAMES = ["James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Thomas", "Charles", "Christopher", "Daniel", "Matthew", "Anthony", "Mark"]
 FEMALE_NAMES = ["Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Barbara", "Susan", "Jessica", "Sarah", "Karen", "Nancy", "Lisa", "Betty", "Margaret", "Sandra"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson"]
 
-def generate_date_random_password():
-    random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(6))
-    current_day = datetime.now().strftime("%d")
-    return f"{random_part}{current_day}"
+# ইউজারের স্টেট সেভ রাখার জন্য
+USER_STATES = {}
 
-def generate_symbol_random_password():
-    random_part = "".join(random.choice(string.ascii_uppercase) for _ in range(5))
-    symbols = "".join(random.choice("@&*$!") for _ in range(3))
-    return f"{random_part}{symbols}"
+def send_message(chat_id, text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except:
+        pass
 
-def generate_only_alphabet_password():
-    return "".join(random.choice(string.ascii_uppercase) for _ in range(7))
+def edit_message(chat_id, message_id, text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText"
+    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except:
+        pass
 
-# হটমেইল ওটিপি এক্সট্রাক্টর মেথড
+def get_main_keyboard():
+    return {
+        "keyboard": [
+            [{"text": "Foreign Name 🌐"}, {"text": "Password 🔑"}],
+            [{"text": "2FA Code 🔐"}, {"text": "Get Hotmail Code ✉️"}],
+            [{"text": "Outlook Mail Buy 🌐", "web_app": {"url": OUTLOOK_WEBAPP_URL}}]
+        ],
+        "resize_keyboard": True
+    }
+
 def extract_hotmail_otp(refresh_token, client_id):
     try:
         url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
@@ -74,140 +90,140 @@ def extract_hotmail_otp(refresh_token, client_id):
         for index, msg in enumerate(messages, 1):
             body = msg.get("body", {}).get("content", "")
             subject = msg.get("subject", "")
-            
             match = re.search(r'\b\d{6}\b', subject + body)
             if match:
-                otp_list.append(f"{index}. {match.group(0)}")
+                otp_list.append(f"{index}. `{match.group(0)}`")
                 
         if otp_list:
             return "✅ **OTP FOUND:**\n\n" + "\n".join(otp_list)
         else:
             return "❌ ইনবক্স রিড করা হয়েছে, কিন্তু কোনো ৬ ডিজিটের কোড পাওয়া যায়নি।"
-            
     except Exception as e:
         return f"❌ কানেকশন এরর: {str(e)}"
 
-# কিবোর্ড লেআউট
-def get_main_keyboard():
-    keyboard = [
-        [KeyboardButton("Foreign Name 🌐"), KeyboardButton("Password 🔑")],
-        [KeyboardButton("2FA Code 🔐"), KeyboardButton("Get Hotmail Code ✉️")],
-        [KeyboardButton("Outlook Mail Buy 🌐", web_app=WebAppInfo(url=OUTLOOK_WEBAPP_URL))]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message if update.message else update.callback_query.message
-    await msg.reply_text("👋 **FB ALL WORK Bot**-এ স্বাগতম!\nমেনু থেকে SERVICE সিলেক্ট করুন।", reply_markup=get_main_keyboard(), parse_mode="Markdown")
-
-async def handle_text_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    
-    if text == "Foreign Name 🌐":
-        full_name = f"{random.choice(MALE_NAMES)} {random.choice(LAST_NAMES)}"
-        reply_text = f"🏷️ **Type:** Foreign • Male\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_"
-        keyboard = [
-            [InlineKeyboardButton("🌐 👨 Male", callback_data="set_male"), InlineKeyboardButton("🌐 👩 Female", callback_data="set_female")],
-            [InlineKeyboardButton("✨ New Name 🔄", callback_data="regen_male")]
-        ]
-        await update.message.reply_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+def handle_update(update):
+    if "message" in update:
+        message = update["message"]
+        chat_id = message["chat"]["id"]
+        text = message.get("text", "")
         
-    elif text == "Password 🔑":
-        password = generate_date_random_password()
-        reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        keyboard = [
-            [InlineKeyboardButton("✅ Date+👑", callback_data="set_date_pass"), 
-             InlineKeyboardButton("❌ Symbol+👑", callback_data="set_sym_pass"), 
-             InlineKeyboardButton("❌ Alphabet", callback_data="set_alpha_pass")],
-            [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_date_pass")]
-        ]
-        await update.message.reply_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        
-    elif text == "2FA Code 🔐":
-        context.user_data['waiting_for_input'] = '2fa'
-        await update.message.reply_text("🔑 আপনার Facebook 2FA সিক্রেট কি (Secret Key) পাঠান:")
-        
-    elif text == "Get Hotmail Code ✉️":
-        context.user_data['waiting_for_input'] = 'hotmail'
-        await update.message.reply_text("📧 **Mail Data দিন:**\n\n`Format: email|pass|refresh_token|client_id`", parse_mode="Markdown")
-
-async def process_user_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.strip()
-    state = context.user_data.get('waiting_for_input')
-    
-    if state == '2fa':
-        secret = user_text.replace(" ", "")
-        try:
-            missing_padding = len(secret) % 8
-            if missing_padding: secret += '=' * (8 - missing_padding)
-            key = base64.b32decode(secret, casefold=True)
-            intervals_no = int(time.time() // 30)
-            msg = intervals_no.to_bytes(8, byteorder='big')
-            h = hmac.new(key, msg, hashlib.sha1).digest()
-            o = h[19] & 15
-            token = (int.from_bytes(h[o:o+4], byteorder='big') & 0x7fffffff) % 1000000
-            await update.message.reply_text(f"🔒 **2FA Code:**\n`{str(token).zfill(6)}`", parse_mode="Markdown", reply_markup=get_main_keyboard())
-        except:
-            await update.message.reply_text("❌ সিক্রেট কি সঠিক নয়। আবার চেষ্টা করুন।", reply_markup=get_main_keyboard())
-        context.user_data['waiting_for_input'] = None
-        
-    elif state == 'hotmail':
-        parts = user_text.split('|')
-        if len(parts) >= 4:
-            refresh_token = parts[2].strip()
-            client_id = parts[3].strip()
+        if text == "/start":
+            USER_STATES[chat_id] = None
+            send_message(chat_id, "👋 **FB ALL WORK Bot**-এ স্বাগতম!\nমেনু থেকে SERVICE সিলেক্ট করুন।", get_main_keyboard())
             
-            status_msg = await update.message.reply_text("⏳ ওটিপি (OTP) খোঁজা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...")
-            result = extract_hotmail_otp(refresh_token, client_id)
-            await status_msg.edit_text(result, parse_mode="Markdown")
+        elif text == "Foreign Name 🌐":
+            full_name = f"{random.choice(MALE_NAMES)} {random.choice(LAST_NAMES)}"
+            reply_text = f"🏷️ **Type:** Foreign • Male\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_"
+            markup = {
+                "inline_keyboard": [
+                    [{"text": "🌐 👨 Male ✅", "callback_data": "set_male"}, {"text": "🌐 👩 Female", "callback_data": "set_female"}],
+                    [{"text": "✨ New Name 🔄", "callback_data": "regen_male"}]
+                ]
+            }
+            send_message(chat_id, reply_text, markup)
+            
+        elif text == "Password 🔑":
+            password = f"{''.join(random.choice(string.ascii_uppercase) for _ in range(6))}{datetime.now().strftime('%d')}"
+            reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
+            markup = {
+                "inline_keyboard": [
+                    [{"text": "✅ Date+👑", "callback_data": "set_date_pass"}, {"text": "❌ Symbol+👑", "callback_data": "set_sym_pass"}, {"text": "❌ Alphabet", "callback_data": "set_alpha_pass"}],
+                    [{"text": "🔄 Generate New Password ✨", "callback_data": "regen_date_pass"}]
+                ]
+            }
+            send_message(chat_id, reply_text, markup)
+            
+        elif text == "2FA Code 🔐":
+            USER_STATES[chat_id] = "waiting_2fa"
+            send_message(chat_id, "🔑 আপনার Facebook 2FA সিক্রেট কি (Secret Key) পাঠান:")
+            
+        elif text == "Get Hotmail Code ✉️":
+            USER_STATES[chat_id] = "waiting_hotmail"
+            send_message(chat_id, "📧 **Mail Data দিন:**\n\n`Format: email|pass|refresh_token|client_id`")
+            
         else:
-            await update.message.reply_text("❌ ভুল ফরম্যাট! অনুগ্রহ করে স্ক্রিনের ফরম্যাট অনুযায়ী ডাটা দিন:\n`email|pass|refresh_token|client_id`", parse_mode="Markdown")
-        context.user_data['waiting_for_input'] = None
-    else:
-        await update.message.reply_text("অনুগ্রহ করে নিচের মেনু বাটন ব্যবহার করুন।", reply_markup=get_main_keyboard())
+            state = USER_STATES.get(chat_id)
+            if state == "waiting_2fa":
+                secret = text.replace(" ", "")
+                try:
+                    missing_padding = len(secret) % 8
+                    if missing_padding: secret += '=' * (8 - missing_padding)
+                    key = base64.b32decode(secret, casefold=True)
+                    intervals_no = int(time.time() // 30)
+                    msg = intervals_no.to_bytes(8, byteorder='big')
+                    h = hmac.new(key, msg, hashlib.sha1).digest()
+                    o = h[19] & 15
+                    token = (int.from_bytes(h[o:o+4], byteorder='big') & 0x7fffffff) % 1000000
+                    send_message(chat_id, f"🔒 **2FA Code:**\n`{str(token).zfill(6)}`", get_main_keyboard())
+                except:
+                    send_message(chat_id, "❌ সিক্রেট কি সঠিক নয়। আবার চেষ্টা করুন।", get_main_keyboard())
+                USER_STATES[chat_id] = None
+                
+            elif state == "waiting_hotmail":
+                parts = text.split('|')
+                if len(parts) >= 4:
+                    refresh_token = parts[2].strip()
+                    client_id = parts[3].strip()
+                    
+                    # টেম্পোরারি মেসেজ পাঠানো ও এপিআই কল
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                    res = requests.post(url, json={"chat_id": chat_id, "text": "⏳ ওটিপি (OTP) খোঁজা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন..."}).json()
+                    msg_id = res.get("result", {}).get("message_id")
+                    
+                    result = extract_hotmail_otp(refresh_token, client_id)
+                    if msg_id:
+                        edit_message(chat_id, msg_id, result)
+                    else:
+                        send_message(chat_id, result)
+                else:
+                    send_message(chat_id, "❌ ভুল ফরম্যাট! অনুগ্রহ করে সঠিক ফরম্যাটে ডাটা দিন:\n`email|pass|refresh_token|client_id`")
+                USER_STATES[chat_id] = None
+            else:
+                send_message(chat_id, "অনুগ্রহ করে নিচের মেনু বাটন ব্যবহার করুন।", get_main_keyboard())
 
-async def handle_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query; await query.answer(); data = query.data
-    if data == "set_male" or data == "regen_male":
-        full_name = f"{random.choice(MALE_NAMES)} {random.choice(LAST_NAMES)}"
-        reply_text = f"🏷️ **Type:** Foreign • Male\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_"
-        keyboard = [[InlineKeyboardButton("🌐 👨 Male ✅", callback_data="set_male"), InlineKeyboardButton("🌐 👩 Female", callback_data="set_female")], [InlineKeyboardButton("✨ New Name 🔄", callback_data="regen_male")]]
-        await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-    elif data == "set_female" or data == "regen_female":
-        full_name = f"{random.choice(FEMALE_NAMES)} {random.choice(LAST_NAMES)}"
-        reply_text = f"🏷️ **Type:** Foreign • Female\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_"
-        keyboard = [[InlineKeyboardButton("🌐 👨 Male", callback_data="set_male"), InlineKeyboardButton("🌐 👩 Female ✅", callback_data="set_female")], [InlineKeyboardButton("✨ New Name 🔄", callback_data="regen_female")]]
-        await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-    elif data == "set_date_pass" or data == "regen_date_pass":
-        password = generate_date_random_password()
-        reply_text = f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        keyboard = [[InlineKeyboardButton("✅ Date+👑", callback_data="set_date_pass"), InlineKeyboardButton("❌ Symbol+👑", callback_data="set_sym_pass"), InlineKeyboardButton("❌ Alphabet", callback_data="set_alpha_pass")], [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_date_pass")]]
-        await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-    elif data == "set_sym_pass" or data == "regen_sym_pass":
-        password = generate_symbol_random_password()
-        reply_text = f"🔒 **Password Generator (Symbol + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        keyboard = [[InlineKeyboardButton("❌ Date+👑", callback_data="set_date_pass"), InlineKeyboardButton("✅ Symbol+👑", callback_data="set_sym_pass"), InlineKeyboardButton("❌ Alphabet", callback_data="set_alpha_pass")], [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_sym_pass")]]
-        await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-    elif data == "set_alpha_pass" or data == "regen_alpha_pass":
-        password = generate_only_alphabet_password()
-        reply_text = f"🔒 **Password Generator (Only Alphabet)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_"
-        keyboard = [[InlineKeyboardButton("❌ Date+👑", callback_data="set_date_pass"), InlineKeyboardButton("❌ Symbol+👑", callback_data="set_sym_pass"), InlineKeyboardButton("✅ Alphabet", callback_data="set_alpha_pass")], [InlineKeyboardButton("🔄 Generate New Password ✨", callback_data="regen_alpha_pass")]]
-        await query.edit_message_text(reply_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    elif "callback_query" in update:
+        callback = update["callback_query"]
+        chat_id = callback["message"]["chat"]["id"]
+        message_id = callback["message"]["message_id"]
+        data = callback["data"]
+        
+        # কলব্যাক কুয়েরি অ্যান্সার করা
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": callback["id"]})
+        
+        if data in ["set_male", "regen_male"]:
+            full_name = f"{random.choice(MALE_NAMES)} {random.choice(LAST_NAMES)}"
+            markup = {"inline_keyboard": [[{"text": "🌐 👨 Male ✅", "callback_data": "set_male"}, {"text": "🌐 👩 Female", "callback_data": "set_female"}], [{"text": "✨ New Name 🔄", "callback_data": "regen_male"}]]}
+            edit_message(chat_id, message_id, f"🏷️ **Type:** Foreign • Male\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_", markup)
+        elif data in ["set_female", "regen_female"]:
+            full_name = f"{random.choice(FEMALE_NAMES)} {random.choice(LAST_NAMES)}"
+            markup = {"inline_keyboard": [[{"text": "🌐 👨 Male", "callback_data": "set_male"}, {"text": "🌐 👩 Female ✅", "callback_data": "set_female"}], [{"text": "✨ New Name 🔄", "callback_data": "regen_female"}]]}
+            edit_message(chat_id, message_id, f"🏷️ **Type:** Foreign • Female\n\n👤 **Name:** `{full_name}`\n\n📋 _Long press to copy_", markup)
+        elif data in ["set_date_pass", "regen_date_pass"]:
+            password = f"{''.join(random.choice(string.ascii_uppercase) for _ in range(6))}{datetime.now().strftime('%d')}"
+            markup = {"inline_keyboard": [[{"text": "✅ Date+👑", "callback_data": "set_date_pass"}, {"text": "❌ Symbol+👑", "callback_data": "set_sym_pass"}, {"text": "❌ Alphabet", "callback_data": "set_alpha_pass"}], [{"text": "🔄 Generate New Password ✨", "callback_data": "regen_date_pass"}]]}
+            edit_message(chat_id, message_id, f"🔒 **Password Generator (Date + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_", markup)
+        elif data in ["set_sym_pass", "regen_sym_pass"]:
+            password = f"{''.join(random.choice(string.ascii_uppercase) for _ in range(5))}{''.join(random.choice('@&*$!') for _ in range(3))}"
+            markup = {"inline_keyboard": [[{"text": "❌ Date+👑", "callback_data": "set_date_pass"}, {"text": "✅ Symbol+👑", "callback_data": "set_sym_pass"}, {"text": "❌ Alphabet", "callback_data": "set_alpha_pass"}], [{"text": "🔄 Generate New Password ✨", "callback_data": "regen_sym_pass"}]]}
+            edit_message(chat_id, message_id, f"🔒 **Password Generator (Symbol + Random)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_", markup)
+        elif data in ["set_alpha_pass", "regen_alpha_pass"]:
+            password = "".join(random.choice(string.ascii_uppercase) for _ in range(7))
+            markup = {"inline_keyboard": [[{"text": "❌ Date+👑", "callback_data": "set_date_pass"}, {"text": "❌ Symbol+👑", "callback_data": "set_sym_pass"}, {"text": "✅ Alphabet", "callback_data": "set_alpha_pass"}], [{"text": "🔄 Generate New Password ✨", "callback_data": "regen_alpha_pass"}]]}
+            edit_message(chat_id, message_id, f"🔒 **Password Generator (Only Alphabet)**\n\n🧾 **Password:** `{password}`\n\n📋 _Long press to copy_", markup)
 
-def main():
-    threading.Thread(target=run_health_check_server, daemon=True).start()
-    
-    # এরর এড়াতে বিল্ড মেকানিজম ফিক্স করা হয়েছে
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^(Foreign Name 🌐|Password 🔑|2FA Code 🔐|Get Hotmail Code ✉️)$'), handle_text_menu))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_inputs))
-    application.add_handler(CallbackQueryHandler(handle_inline_buttons))
-    
-    # স্টার্ট পোলিং মেথড
-    application.run_polling(close_loop=False)
+def poll_updates():
+    offset = 0
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={offset}&timeout=20"
+            response = requests.get(url, timeout=25).json()
+            if response.get("ok") and response.get("result"):
+                for update in response["result"]:
+                    offset = update["update_id"] + 1
+                    handle_update(update)
+        except:
+            time.sleep(1)
 
 if __name__ == '__main__':
-    main()
-    
+    threading.Thread(target=run_health_check_server, daemon=True).start()
+    poll_updates()
